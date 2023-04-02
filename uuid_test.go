@@ -3,6 +3,7 @@ package uuid
 import (
 	"bytes"
 	"crypto/rand"
+	"reflect"
 	"testing"
 	"time"
 )
@@ -100,6 +101,24 @@ func TestUUID_Version(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			if got := tt.UUID.Version(); got != tt.want {
 				t.Errorf("UUID.Version() = %v, want %v", got, tt.want)
+			}
+		})
+	}
+}
+
+func TestUUID_Timestamp(t *testing.T) {
+	tests := []struct {
+		name string
+		uuid UUID
+		want time.Time
+	}{
+		{"UUIDv7", UUID{0x01, 0x79, 0x75, 0x56, 0x0F, 0xBB, 0x70, 0x00, 0x81, 0x23, 0x45, 0x67, 0x89, 0xAB, 0xCD, 0xEF}, time.Unix(1621171244, 987*1000000)},
+		{"UUIDv4", UUID{0x68, 0x6e, 0x77, 0x78, 0xf9, 0xf0, 0x46, 0x22, 0xa1, 0x3e, 0xc2, 0x44, 0x1c, 0xe4, 0xae, 0x41}, time.Unix(0, 0)},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if got := tt.uuid.Timestamp(); !reflect.DeepEqual(got, tt.want) {
+				t.Errorf("UUID.Timestamp() = %v, want %v", got, tt.want)
 			}
 		})
 	}

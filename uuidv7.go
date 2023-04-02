@@ -2,38 +2,32 @@ package uuid
 
 import (
 	"crypto/rand"
-	"encoding/binary"
+)
+
+var (
+	v7lastTimeStamp int64
+	v7lastSequence  uint16
 )
 
 func NewV7() (uuid UUID, err error) {
-	t := CurrentTime().UTC()
-	timestamp := make([]byte, 8)
-	binary.BigEndian.PutUint64(timestamp, uint64(t.Unix()<<4))
-	copy(uuid[:5], timestamp[3:])
-	subsec := make([]byte, 4)
-	binary.BigEndian.PutUint32(subsec, uint32(t.Nanosecond()<<2))
-	uuid[4] |= subsec[0] >> 4
-	uuid[5] = (subsec[0] << 4) | (subsec[1] >> 4)
-	uuid[6] = subsec[1] & 0x0f
-	uuid[7] = subsec[2]
-	uuid[8] = subsec[3] >> 2
-	if UseSequenceCounter {
-		if t == lastTime {
-			lastSequence++
-		} else {
-			lastSequence = 0
-		}
-		lastTime = t
-		binary.BigEndian.PutUint16(uuid[9:11], lastSequence)
-		_, err = rand.Read(uuid[11:])
-		if err != nil {
-			return
-		}
+	now := CurrentTime().UnixMilli()
+	uuid[0] = byte(now >> 40) //1-6 bytes: big-endian unsigned number of Unix epoch timestamp
+	uuid[1] = byte(now >> 32)
+	uuid[2] = byte(now >> 24)
+	uuid[3] = byte(now >> 16)
+	uuid[4] = byte(now >> 8)
+	uuid[5] = byte(now)
+	if now == v7lastTimeStamp {
+		v7lastSequence++
 	} else {
-		_, err = rand.Read(uuid[9:])
-		if err != nil {
-			return
-		}
+		v7lastTimeStamp = now
+		v7lastSequence = 0
+	}
+	uuid[6] = byte(v7lastSequence >> 8)
+	uuid[7] = byte(v7lastSequence)
+	_, err = rand.Read(uuid[8:])
+	if err != nil {
+		return
 	}
 	uuid.setVersion(7)
 	return

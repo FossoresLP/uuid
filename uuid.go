@@ -2,20 +2,12 @@ package uuid
 
 import (
 	"encoding/binary"
+	"fmt"
 	"time"
 )
 
 // CurrentTime is a function used to get the current time. It defaults to time.Now but can be set to a different function in case a different time source should be used.
 var CurrentTime func() time.Time = time.Now
-
-// UseSequenceCounter defines whether to use a 16-bit sequence counter when generating a UUIDv7. It defaults to true. When turned off, the 16 bits will be used for additional random data.
-var UseSequenceCounter bool = true
-var (
-	lastDiffToEpoch      uint64    = 0
-	sequenceCounterEpoch uint16    = 0
-	lastTime             time.Time = time.Unix(0, 0)
-	lastSequence         uint16    = 0
-)
 
 // UUID represents a Universal Unique Identifier as an array containing 16 bytes
 type UUID [16]byte
@@ -58,9 +50,14 @@ func (uuid UUID) Version() int {
 
 // Timestamp returns the timestamp of the UUID or nil if the UUID does not contain a timestamp
 func (uuid UUID) Timestamp() time.Time {
-	if uuid.Version() == 7 {
-		i := binary.BigEndian.Uint64(append([]byte{0x00, 0x00, 0x00}, uuid[:5]...)) >> 4
-		return time.Unix(int64(i), 0)
+	switch uuid.Version() {
+	case 7:
+		fmt.Printf("%x\n", uuid[:6])
+		i := binary.BigEndian.Uint64(append([]byte{0x00, 0x00}, uuid[:6]...))
+		println(i)
+		println(int64(i))
+		return time.Unix(int64(i)/1000, (int64(i)%1000)*1000000)
+	default:
+		return time.Unix(0, 0)
 	}
-	return time.Unix(0, 0)
 }

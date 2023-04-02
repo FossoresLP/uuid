@@ -1,86 +1,60 @@
 package uuid
 
 import (
+	"reflect"
 	"testing"
+	"time"
 )
 
 func TestNewV7(t *testing.T) {
-	// Test default generation with fixed timestamp and random data
-	idv7 := UUID{0x06, 0x0A, 0x11, 0xC2, 0xCE, 0xB7, 0x79, 0xA2, 0xB1, 0x01, 0x23, 0x45, 0x67, 0x89, 0xAB, 0xCD}
-	testRand(0x01, 0x23, 0x45, 0x67, 0x89, 0xAB, 0xCD, 0xEF)
-	CurrentTime = testTime()
-	id, err := NewV7()
-	if err != nil {
-		t.Error("New failed to generate a UUIDv7")
+	tests := []struct {
+		name       string
+		fakeRandom []byte
+		fakeTime   time.Duration
+		wantUUID   UUID
+		wantErr    bool
+	}{
+		{
+			"Default",
+			[]byte{0x01, 0x23, 0x45, 0x67, 0x89, 0xAB, 0xCD, 0xEF},
+			0,
+			UUID{0x01, 0x79, 0x75, 0x56, 0x0F, 0xBB, 0x70, 0x00, 0x81, 0x23, 0x45, 0x67, 0x89, 0xAB, 0xCD, 0xEF},
+			false,
+		},
+		{
+			"Sequence",
+			[]byte{0x01, 0x23, 0x45, 0x67, 0x89, 0xAB, 0xCD, 0xEF},
+			0,
+			UUID{0x01, 0x79, 0x75, 0x56, 0x0F, 0xBB, 0x70, 0x01, 0x81, 0x23, 0x45, 0x67, 0x89, 0xAB, 0xCD, 0xEF},
+			false,
+		},
+		{
+			"NextTime",
+			[]byte{0x01, 0x23, 0x45, 0x67, 0x89, 0xAB, 0xCD, 0xEF},
+			1 * time.Second,
+			UUID{0x01, 0x79, 0x75, 0x56, 0x13, 0xA3, 0x70, 0x00, 0x81, 0x23, 0x45, 0x67, 0x89, 0xAB, 0xCD, 0xEF},
+			false,
+		},
+		{
+			"NoRandom",
+			nil,
+			0,
+			UUID{0x01, 0x79, 0x75, 0x56, 0x0F, 0xBB, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00},
+			true,
+		},
 	}
-	if id != idv7 {
-		t.Errorf("uuid.NewV7() = %v, want %v", id, idv7)
-	}
-	if id.Version() != 7 {
-		t.Errorf("uuid.NewV7() generated UUID with wrong version %d", id.Version())
-	}
-
-	// Test generation with sequence counter
-	UseSequenceCounter = true
-
-	// First ID with sequence counter
-	idv7 = UUID{0x06, 0x0A, 0x11, 0xC2, 0xCE, 0xB7, 0x79, 0xA2, 0xB1, 0x00, 0x00, 0x01, 0x23, 0x45, 0x67, 0x89}
-	testRand(0x01, 0x23, 0x45, 0x67, 0x89, 0xAB, 0xCD, 0xEF)
-	CurrentTime = testTime()
-	id, err = NewV7()
-	if err != nil {
-		t.Error("New failed to generate a UUIDv7")
-	}
-	if id != idv7 {
-		t.Errorf("uuid.NewV7() = %v, want %v", id, idv7)
-	}
-	if id.Version() != 7 {
-		t.Errorf("uuid.NewV7() generated UUID with wrong version %d", id.Version())
-	}
-
-	// Second ID with sequence counter
-	idv7 = UUID{0x06, 0x0A, 0x11, 0xC2, 0xCE, 0xB7, 0x79, 0xA2, 0xB1, 0x00, 0x01, 0x01, 0x23, 0x45, 0x67, 0x89}
-	testRand(0x01, 0x23, 0x45, 0x67, 0x89, 0xAB, 0xCD, 0xEF)
-	CurrentTime = testTime()
-	id, err = NewV7()
-	if err != nil {
-		t.Error("New failed to generate a UUIDv7")
-	}
-	if id != idv7 {
-		t.Errorf("uuid.NewV7() = %v, want %v", id, idv7)
-	}
-	if id.Version() != 7 {
-		t.Errorf("uuid.NewV7() generated UUID with wrong version %d", id.Version())
-	}
-
-	// ID with sequence counter at different time
-	idv7 = UUID{0x06, 0x0A, 0x11, 0xC2, 0xCE, 0xB7, 0x79, 0xA2, 0xB2, 0x00, 0x00, 0x01, 0x23, 0x45, 0x67, 0x89}
-	testRand(0x01, 0x23, 0x45, 0x67, 0x89, 0xAB, 0xCD, 0xEF)
-	CurrentTime = testTime(1)
-	id, err = NewV7()
-	if err != nil {
-		t.Error("New failed to generate a UUIDv7")
-	}
-	if id != idv7 {
-		t.Errorf("uuid.NewV7() = %v, want %v", id, idv7)
-	}
-	if id.Version() != 7 {
-		t.Errorf("uuid.NewV7() generated UUID with wrong version %d", id.Version())
-	}
-
-	// Test default generation with random generator error
-	UseSequenceCounter = false
-	testRand()
-	_, err = NewV7()
-	if err == nil {
-		t.Error("New did not fail when no random data was available")
-	}
-
-	// Test generation with sequence counter with random generator error
-	UseSequenceCounter = true
-	testRand()
-	_, err = NewV7()
-	if err == nil {
-		t.Error("New did not fail when no random data was available")
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			CurrentTime = testTime(tt.fakeTime)
+			testRand(tt.fakeRandom...)
+			gotUUID, err := NewV7()
+			if (err != nil) != tt.wantErr {
+				t.Errorf("NewV7() error = %v, wantErr %v", err, tt.wantErr)
+				return
+			}
+			if !reflect.DeepEqual(gotUUID, tt.wantUUID) {
+				t.Errorf("NewV7() = %v, want %v", gotUUID, tt.wantUUID)
+			}
+		})
 	}
 }

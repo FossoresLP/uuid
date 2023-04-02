@@ -5,6 +5,11 @@ import (
 	"encoding/binary"
 )
 
+var (
+	v6lastDiffToEpoch      uint64 = 0
+	v6sequenceCounterEpoch uint16 = 0
+)
+
 func NewV6() (uuid UUID, err error) {
 
 	t := make([]byte, 8)
@@ -13,12 +18,12 @@ func NewV6() (uuid UUID, err error) {
 	copy(uuid[:6], t[:6])
 	uuid[6] = t[6] >> 4
 	uuid[7] = (t[6] << 4) | (t[7] >> 4)
-	if diffToEpoch == lastDiffToEpoch {
-		sequenceCounterEpoch++
+	if diffToEpoch == v6lastDiffToEpoch {
+		v6sequenceCounterEpoch++
 	} else {
-		sequenceCounterEpoch = 0
+		v6sequenceCounterEpoch = 0
 	}
-	binary.BigEndian.PutUint16(uuid[8:10], sequenceCounterEpoch)
+	binary.BigEndian.PutUint16(uuid[8:10], v6sequenceCounterEpoch)
 	_, err = rand.Read(uuid[10:])
 	if err != nil {
 		return
