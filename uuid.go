@@ -2,7 +2,6 @@ package uuid
 
 import (
 	"encoding/binary"
-	"fmt"
 	"time"
 )
 
@@ -52,11 +51,8 @@ func (uuid UUID) Version() int {
 func (uuid UUID) Timestamp() time.Time {
 	switch uuid.Version() {
 	case 7:
-		fmt.Printf("%x\n", uuid[:6])
-		i := binary.BigEndian.Uint64(append([]byte{0x00, 0x00}, uuid[:6]...))
-		println(i)
-		println(int64(i))
-		return time.Unix(int64(i)/1000, (int64(i)%1000)*1000000)
+		i := int64(binary.BigEndian.Uint64(append([]byte{0x00, 0x00}, uuid[:6]...)))
+		return time.Unix(i/1000, (i%1000)*1000000)
 	default:
 		return time.Unix(0, 0)
 	}
