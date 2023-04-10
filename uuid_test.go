@@ -3,18 +3,23 @@ package uuid
 import (
 	"bytes"
 	"crypto/rand"
+	"net"
 	"reflect"
 	"testing"
 	"time"
 )
 
-func testTime(add ...time.Duration) func() time.Time {
-	return func() time.Time {
-		if len(add) > 0 {
-			return time.Unix(1621171244, 987654321).Add(add[0])
-		}
-		return time.Unix(1621171244, 987654321)
-	}
+const (
+	testVecTimeCustom int64 = 1621171244987654321 // 2021-05-16T13:20:44.987654321Z
+	testVecTimeRFC    int64 = 1645557742000000000 // 2022-02-22T07:22:22.00Z
+)
+
+func testTime(tm int64) {
+	CurrentTime = func() time.Time { return time.Unix(0, tm) }
+}
+
+func trueTime() {
+	CurrentTime = time.Now
 }
 
 var random = rand.Reader // store rand.Reader since it is replaced by static data by some tests
@@ -121,5 +126,86 @@ func TestUUID_Timestamp(t *testing.T) {
 				t.Errorf("UUID.Timestamp() = %v, want %v", got, tt.want)
 			}
 		})
+	}
+}
+
+func Test_intervalsSinceEpoch(t *testing.T) {
+	tests := []struct {
+		name     string
+		fakeTime int64
+		want     int64
+	}{
+		{"TestTime", testVecTimeCustom, 138404640449876543},
+		{"TestTime+1d", testVecTimeCustom + 86400000000000, 138404640449876543 + 864000000000},
+		{"TestTime-3y", testVecTimeCustom - 94672800000000000, 138404640449876543 - 946728000000000},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			testTime(tt.fakeTime)
+			diff1 := time.Date(1800, 1, 1, 0, 0, 0, 0, time.UTC).Sub(time.Date(1582, 10, 15, 0, 0, 0, 0, time.UTC)).Nanoseconds() / 100
+			diff2 := CurrentTime().Sub(time.Date(1800, 1, 1, 0, 0, 0, 0, time.UTC)).Nanoseconds() / 100
+			diff := diff1 + diff2
+			if got := intervalsSinceEpoch(); got != tt.want {
+				t.Errorf("intervalsSinceEpoch() = %v, want %v, calculated %v", got, tt.want, diff)
+			}
+		})
+	}
+}
+
+func Test_getHWAddr(t *testing.T) {
+	tests := []struct {
+		name        string
+		useHWMAC    bool
+		fakeRandom  []byte
+		resetRandom bool
+		want        net.HardwareAddr
+		wantErr     bool
+	}{
+		{"DeviceMAC", true, nil, false, nil, false},
+		{"RandomMAC", false, []byte{0x01, 0x23, 0x45, 0x67, 0x89, 0xAB, 0xCD, 0xEF}, false, []byte{0x03, 0x23, 0x45, 0x67, 0x89, 0xAB}, false},
+		{"SameRandomMAC", false, nil, false, []byte{0x03, 0x23, 0x45, 0x67, 0x89, 0xAB}, false},
+		{"DifferentRandomMAC", false, []byte{0xFE, 0xDC, 0xBA, 0x98, 0x76, 0x54, 0x32, 0x10}, true, []byte{0xFF, 0xDC, 0xBA, 0x98, 0x76, 0x54}, false},
+		{"NoRandom", false, nil, true, nil, true},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			UseHardwareMAC = tt.useHWMAC
+			testRand(tt.fakeRandom...)
+			if tt.resetRandom {
+				RandomMAC = nil
+			}
+			got, err := getHWAddr()
+			if (err != nil) != tt.wantErr {
+				t.Errorf("getHWAddr() error = %v, wantErr %v", err, tt.wantErr)
+				return
+			}
+			if tt.want == nil && !tt.wantErr && (got == nil || got[0]&0x03 != 0x00) {
+				t.Errorf("getHWAddr() = %v, which is not global unicast", got)
+			}
+			if tt.want != nil && !reflect.DeepEqual(got, tt.want) {
+				t.Errorf("getHWAddr() = %v, want %v", got, tt.want)
+			}
+		})
+	}
+}
+
+func Test_getHWAddrRandom(t *testing.T) {
+	trueRand()
+	UseHardwareMAC = false
+	for i := 0; i < 1000; i++ {
+		RandomMAC = nil
+		addr, err := getHWAddr()
+		if err != nil {
+			t.Errorf("getHWAddr() error = %v", err)
+		}
+		if addr == nil {
+			t.Errorf("getHWAddr() returned nil value without error")
+		}
+		if len(addr) != 6 {
+			t.Errorf("getHWAddr() returned invalid length %d", len(addr))
+		}
+		if addr[0]&0x03 != 0x03 {
+			t.Errorf("getHWAddr() = %v, which is not local multicast", addr)
+		}
 	}
 }
