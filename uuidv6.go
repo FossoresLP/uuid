@@ -9,6 +9,10 @@ var (
 	v6LastSequence  atomic.Uint32
 )
 
+// NewV6 returns a new UUID based on the current timestamp and MAC address.
+// The timestamp is retrieved from the system clock.
+// The MAC address is randomly generated at application startup and can be overridden using SetMACAddress or UseHardwareMAC.
+// Unlike UUIDv1, UUIDv6 is designed to be sortable by time using binary or lexicographical comparison.
 func NewV6() (uuid UUID) {
 	timestamp := intervalsSinceEpoch()
 	uuid[0] = byte(timestamp >> 52) // time_high 32 bits from 0 to 31

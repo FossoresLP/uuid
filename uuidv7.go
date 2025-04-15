@@ -1,5 +1,9 @@
 package uuid
 
+// NewV7 returns a new UUID based on the current timestamp and random data.
+// The timestamp is retrieved from the system clock.
+// The random data is generated using the cryptographically secure random number generator.
+// This implementation uses the fractional millisecond approach for ordering of UUIDs within the same millisecond.
 func NewV7() (uuid UUID) {
 	time := currentTime()
 	ms := time.UnixMilli()

@@ -9,6 +9,9 @@ var (
 	v1LastSequence  atomic.Uint32
 )
 
+// NewV1 returns a new UUID based on the current timestamp and MAC address.
+// The timestamp is retrieved from the system clock.
+// The MAC address is randomly generated at application startup and can be overridden using SetMACAddress or UseHardwareMAC.
 func NewV1() (uuid UUID) {
 	timestamp := intervalsSinceEpoch()
 	uuid[0] = byte(timestamp >> 24) // time_low 32 bits from 0 to 31
