@@ -1,7 +1,9 @@
 package uuid
 
 import (
+	"database/sql"
 	"database/sql/driver"
+	"encoding"
 	"encoding/hex"
 	"fmt"
 )
@@ -114,3 +116,10 @@ func (uuid *UUID) Scan(val any) error {
 func (uuid UUID) Value() (driver.Value, error) {
 	return uuid[:], nil
 }
+
+var _ encoding.TextMarshaler = (*UUID)(nil)
+var _ encoding.TextUnmarshaler = (*UUID)(nil)
+var _ encoding.BinaryMarshaler = (*UUID)(nil)
+var _ encoding.BinaryUnmarshaler = (*UUID)(nil)
+var _ sql.Scanner = (*UUID)(nil)
+var _ driver.Valuer = (*UUID)(nil)
