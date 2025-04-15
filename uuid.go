@@ -1,22 +1,66 @@
 package uuid
 
 import (
-	"crypto/rand"
+	crand "crypto/rand"
 	"encoding/binary"
+	"fmt"
+	mrand "math/rand/v2"
 	"net"
 	"time"
 )
 
-// EpochToUnix represents the 100ns intervals between 1582-10-15T00:00:00.00Z and 1970-01-01T00:00:00.00Z
-const EpochToUnix int64 = 122192928000000000
+// epochToUnix represents the 100ns intervals between 1582-10-15T00:00:00.00Z and 1970-01-01T00:00:00.00Z
+const epochToUnix int64 = 122192928000000000
 
-// CurrentTime is a function used to get the current time. It defaults to time.Now but can be set to a different function in case a different time source should be used.
-var CurrentTime func() time.Time = time.Now
+// currentTime is a function used to get the current time. It defaults to time.Now but may be replaced for testing purposes.
+var currentTime func() time.Time = time.Now
+
+// randomSource is a function used to generate random bytes. It defaults to crypto/rand.Rand but may be replaced for testing purposes.
+var randomSource func([]byte) (int, error) = crand.Read
+
+// randomUint32 is a function used to generate a random uint32. It defaults to math/rand/v2.Uint32N but may be replaced for testing purposes.
+var randomUint32 func(uint32) uint32 = mrand.Uint32N
+
+var netInterfaces func() ([]net.Interface, error) = net.Interfaces
 
 var (
-	UseHardwareMAC bool             = false // UseHardwareMAC defines whether to use a MAC address from a network card if available or generate one. It defaults to false for privacy reasons and because the MAC address lookup creates additional latency.
-	RandomMAC      net.HardwareAddr         // Random MAC address - will be automatically generated unless set manually
+	mac net.HardwareAddr // MAC address - derived from RandomMAC or from a network card if UseHardwareMAC is true
 )
+
+func init() {
+	mac = make(net.HardwareAddr, 6)
+	randomSource(mac)
+	mac[0] |= 0x03 // set local and multicast bits - spec requires only multicast to be set
+}
+
+// SetMACAddress sets the MAC address to be used for generating UUIDs.
+// The MAC address must be 6 bytes long.
+// If the MAC address is not set, a random MAC address will be generated.
+// WARNING: This function is not thread-safe. Make sure to set the MAC address before generating any UUIDs.
+func SetMACAddress(macAddr net.HardwareAddr) error {
+	if len(macAddr) != 6 {
+		return fmt.Errorf("invalid MAC address length: %d", len(macAddr))
+	}
+	copy(mac, macAddr)
+	return nil
+}
+
+// UseHardwareMAC sets the MAC address to be used for generating UUIDs to the first valid hardware MAC address found on the system.
+// If no valid hardware MAC address is found, an error is returned.
+// WARNING: This function is not thread-safe. Make sure to set the MAC address before generating any UUIDs.
+func UseHardwareMAC() error {
+	ifaces, err := netInterfaces()
+	if err != nil {
+		return err
+	}
+	for _, iface := range ifaces {
+		if len(iface.HardwareAddr) == 6 {
+			mac = iface.HardwareAddr
+			return nil
+		}
+	}
+	return fmt.Errorf("no valid hardware MAC address found")
+}
 
 // UUID represents a Universal Unique Identifier as an array containing 16 bytes
 type UUID [16]byte
@@ -24,22 +68,6 @@ type UUID [16]byte
 func (uuid *UUID) setVersion(v byte) {
 	uuid[6] = (uuid[6] & 0x0f) | (v << 4) // Version
 	uuid[8] = (uuid[8] & 0x3f) | 0x80     // Variant 10
-}
-
-// Must wraps the output of New and panics when an error occured
-func Must(uuid UUID, err error) UUID {
-	if err != nil {
-		panic(err)
-	}
-	return uuid
-}
-
-// MustString works like Must but returns a string immediately
-func MustString(uuid UUID, err error) string {
-	if err != nil {
-		panic(err)
-	}
-	return uuid.String()
 }
 
 // IsNil returns true if the UUID contains only zeros and is therefore empty and invalid
@@ -69,40 +97,7 @@ func (uuid UUID) Timestamp() time.Time {
 }
 
 func intervalsSinceEpoch() int64 {
-	return EpochToUnix + CurrentTime().UTC().UnixNano()/100
-}
-
-func getHWAddr() (net.HardwareAddr, error) {
-	if UseHardwareMAC {
-		interfaces, err := net.Interfaces()
-		if err == nil {
-			for _, intf := range interfaces {
-				if len(intf.HardwareAddr) == 6 {
-					return intf.HardwareAddr, nil
-				}
-			}
-		}
-	}
-	if RandomMAC != nil {
-		return RandomMAC, nil
-	}
-	addr := make(net.HardwareAddr, 6)
-	_, err := rand.Read(addr)
-	if err != nil {
-		return nil, err
-	}
-	addr[0] |= 0x03 // set local and multicast bits - spec requires only multicast to be set
-	RandomMAC = addr
-	return addr, nil
-}
-
-func randomUint16() (uint16, error) {
-	bytes := make([]byte, 2)
-	_, err := rand.Read(bytes)
-	if err != nil {
-		return 0, err
-	}
-	return uint16(bytes[0])<<8 + uint16(bytes[1]), nil
+	return epochToUnix + currentTime().UTC().UnixNano()/100
 }
 
 func NamespaceDNS() UUID {

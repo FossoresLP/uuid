@@ -4,7 +4,7 @@ import (
 	"crypto/sha1"
 )
 
-func NewV5(ns UUID, name string) (uuid UUID, err error) {
+func NewV5(ns UUID, name string) (uuid UUID) {
 	hash := sha1.New()
 	hash.Write(ns[:])
 	hash.Write([]byte(name))

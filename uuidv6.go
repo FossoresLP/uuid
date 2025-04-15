@@ -1,11 +1,15 @@
 package uuid
 
-var (
-	v6LastTimestamp int64
-	v6LastSequence  uint16
+import (
+	"sync/atomic"
 )
 
-func NewV6() (uuid UUID, err error) {
+var (
+	v6LastTimestamp atomic.Int64
+	v6LastSequence  atomic.Uint32
+)
+
+func NewV6() (uuid UUID) {
 	timestamp := intervalsSinceEpoch()
 	uuid[0] = byte(timestamp >> 52) // time_high 32 bits from 0 to 31
 	uuid[1] = byte(timestamp >> 44)
@@ -15,23 +19,16 @@ func NewV6() (uuid UUID, err error) {
 	uuid[5] = byte(timestamp >> 12)
 	uuid[6] = byte(timestamp >> 8) // time_low 12 bits from 52 to 63 (bits 48 to 51 are overwritten by version)
 	uuid[7] = byte(timestamp >> 0)
-	if v6LastTimestamp == timestamp {
-		v6LastSequence++
+	var seq uint32
+	if timestamp == v6LastTimestamp.Swap(timestamp) {
+		seq = v6LastSequence.Add(1)
 	} else {
-		seq, err := randomUint16()
-		if err != nil {
-			return uuid, err
-		}
-		v6LastSequence = seq
-		v6LastTimestamp = timestamp
+		seq = randomUint32(0x4000)
+		v6LastSequence.Store(seq)
 	}
-	uuid[8] = byte(v6LastSequence >> 8) // clock_seq 14 bits from 66 to 79 (bits 64 and 65 are overwritten by variant)
-	uuid[9] = byte(v6LastSequence >> 0)
-	hwaddr, err := getHWAddr()
-	if err != nil {
-		return uuid, err
-	}
-	copy(uuid[10:], hwaddr) // node 48 bits from 80 to 127
+	uuid[8] = byte(seq >> 8) // clock_seq 14 bits from 66 to 79 (bits 64 and 65 are overwritten by variant)
+	uuid[9] = byte(seq >> 0)
+	copy(uuid[10:], mac) // node 48 bits from 80 to 127
 	uuid.setVersion(6)
 	return
 }

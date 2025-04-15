@@ -2,7 +2,7 @@ package uuid
 
 import (
 	"bytes"
-	"crypto/rand"
+	"errors"
 	"net"
 	"reflect"
 	"testing"
@@ -14,32 +14,150 @@ const (
 	testVecTimeRFC    int64 = 1645557742000000000 // 2022-02-22T07:22:22.00Z
 )
 
-func testTime(tm int64) {
-	CurrentTime = func() time.Time { return time.Unix(0, tm) }
+func testPrepare(tm int64, rand []byte, randN uint32, macAddr net.HardwareAddr) {
+	currentTime = func() time.Time { return time.Unix(0, tm) }
+	randomSource = bytes.NewBuffer(rand).Read
+	randomUint32 = func(uint32) uint32 { return randN }
+	mac = macAddr
 }
 
-func trueTime() {
-	CurrentTime = time.Now
-}
-
-var random = rand.Reader // store rand.Reader since it is replaced by static data by some tests
-
-func testRand(b ...byte) {
-	rand.Reader = bytes.NewBuffer(b)
-}
-
-func trueRand() {
-	rand.Reader = random
-}
-
-func TestMustString(t *testing.T) {
-	trueRand()
-	id := MustString(NewV4())
-	if len(id) != 36 {
-		t.Errorf("Generated UUID length is invalid. Should be 36 but is: %d", len(id))
+func TestSetMACAddress(t *testing.T) {
+	tests := []struct {
+		name    string
+		mac     net.HardwareAddr
+		wantErr bool
+	}{
+		{
+			name:    "Valid MAC address",
+			mac:     net.HardwareAddr{0x01, 0x02, 0x03, 0x04, 0x05, 0x06},
+			wantErr: false,
+		},
+		{
+			name:    "Invalid MAC address length (too short)",
+			mac:     net.HardwareAddr{0x01, 0x02, 0x03, 0x04, 0x05},
+			wantErr: true,
+		},
+		{
+			name:    "Invalid MAC address length (too long)",
+			mac:     net.HardwareAddr{0x01, 0x02, 0x03, 0x04, 0x05, 0x06, 0x07},
+			wantErr: true,
+		},
+		{
+			name:    "Empty MAC address",
+			mac:     net.HardwareAddr{},
+			wantErr: true,
+		},
 	}
-	if id[8] != '-' || id[13] != '-' || id[18] != '-' || id[23] != '-' {
-		t.Errorf("Dash placement invalid. Should be 8, 13, 18, 23 but is %s", id)
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			err := SetMACAddress(tt.mac)
+			if (err != nil) != tt.wantErr {
+				t.Errorf("SetMACAddress() error = %v, wantErr %v", err, tt.wantErr)
+				return
+			}
+
+			// If we didn't expect an error, verify the MAC address was set correctly
+			if !tt.wantErr {
+				if !reflect.DeepEqual(mac, tt.mac) {
+					t.Errorf("SetMACAddress() did not set MAC correctly, got = %v, want %v", mac, tt.mac)
+				}
+			}
+		})
+	}
+}
+
+func TestUseHardwareMAC(t *testing.T) {
+	tests := []struct {
+		name       string
+		interfaces []net.Interface
+		interfErr  error
+		wantErr    bool
+		wantMAC    net.HardwareAddr
+	}{
+		{
+			name: "Valid interface found",
+			interfaces: []net.Interface{
+				{
+					HardwareAddr: net.HardwareAddr{0xAA, 0xBB, 0xCC, 0xDD, 0xEE, 0xFF},
+				},
+			},
+			interfErr: nil,
+			wantErr:   false,
+			wantMAC:   net.HardwareAddr{0xAA, 0xBB, 0xCC, 0xDD, 0xEE, 0xFF},
+		},
+		{
+			name: "Multiple interfaces, use first valid",
+			interfaces: []net.Interface{
+				{
+					HardwareAddr: nil,
+				},
+				{
+					HardwareAddr: net.HardwareAddr{0x01, 0x02},
+				},
+				{
+					HardwareAddr: net.HardwareAddr{0xAA, 0xBB, 0xCC, 0xDD, 0xEE, 0xFF},
+				},
+			},
+			interfErr: nil,
+			wantErr:   false,
+			wantMAC:   net.HardwareAddr{0xAA, 0xBB, 0xCC, 0xDD, 0xEE, 0xFF},
+		},
+		{
+			name:       "No interfaces found",
+			interfaces: []net.Interface{},
+			interfErr:  nil,
+			wantErr:    true,
+			wantMAC:    nil,
+		},
+		{
+			name:       "Error getting interfaces",
+			interfaces: nil,
+			interfErr:  errors.New("network error"),
+			wantErr:    true,
+			wantMAC:    nil,
+		},
+		{
+			name: "No valid MAC addresses",
+			interfaces: []net.Interface{
+				{
+					HardwareAddr: net.HardwareAddr{0x01, 0x02, 0x03},
+				},
+				{
+					HardwareAddr: net.HardwareAddr{0x01, 0x02},
+				},
+			},
+			interfErr: nil,
+			wantErr:   true,
+			wantMAC:   nil,
+		},
+	}
+
+	// Save original function to restore later
+	originalNetInterfaces := netInterfaces
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			// Mock netInterfaces function
+			netInterfaces = func() ([]net.Interface, error) {
+				return tt.interfaces, tt.interfErr
+			}
+
+			// Reset netInterfaces after test
+			defer func() {
+				netInterfaces = originalNetInterfaces
+			}()
+
+			err := UseHardwareMAC()
+			if (err != nil) != tt.wantErr {
+				t.Errorf("UseHardwareMAC() error = %v, wantErr %v", err, tt.wantErr)
+				return
+			}
+
+			if !tt.wantErr && !reflect.DeepEqual(mac, tt.wantMAC) {
+				t.Errorf("UseHardwareMAC() did not set MAC correctly, got = %v, want %v", mac, tt.wantMAC)
+			}
+		})
 	}
 }
 
@@ -141,9 +259,9 @@ func Test_intervalsSinceEpoch(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			testTime(tt.fakeTime)
+			testPrepare(tt.fakeTime, nil, 0, nil)
 			diff1 := time.Date(1800, 1, 1, 0, 0, 0, 0, time.UTC).Sub(time.Date(1582, 10, 15, 0, 0, 0, 0, time.UTC)).Nanoseconds() / 100
-			diff2 := CurrentTime().Sub(time.Date(1800, 1, 1, 0, 0, 0, 0, time.UTC)).Nanoseconds() / 100
+			diff2 := currentTime().Sub(time.Date(1800, 1, 1, 0, 0, 0, 0, time.UTC)).Nanoseconds() / 100
 			diff := diff1 + diff2
 			if got := intervalsSinceEpoch(); got != tt.want {
 				t.Errorf("intervalsSinceEpoch() = %v, want %v, calculated %v", got, tt.want, diff)
@@ -152,60 +270,38 @@ func Test_intervalsSinceEpoch(t *testing.T) {
 	}
 }
 
-func Test_getHWAddr(t *testing.T) {
-	tests := []struct {
-		name        string
-		useHWMAC    bool
-		fakeRandom  []byte
-		resetRandom bool
-		want        net.HardwareAddr
-		wantErr     bool
-	}{
-		{"DeviceMAC", true, nil, false, nil, false},
-		{"RandomMAC", false, []byte{0x01, 0x23, 0x45, 0x67, 0x89, 0xAB, 0xCD, 0xEF}, false, []byte{0x03, 0x23, 0x45, 0x67, 0x89, 0xAB}, false},
-		{"SameRandomMAC", false, nil, false, []byte{0x03, 0x23, 0x45, 0x67, 0x89, 0xAB}, false},
-		{"DifferentRandomMAC", false, []byte{0xFE, 0xDC, 0xBA, 0x98, 0x76, 0x54, 0x32, 0x10}, true, []byte{0xFF, 0xDC, 0xBA, 0x98, 0x76, 0x54}, false},
-		{"NoRandom", false, nil, true, nil, true},
-	}
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			UseHardwareMAC = tt.useHWMAC
-			testRand(tt.fakeRandom...)
-			if tt.resetRandom {
-				RandomMAC = nil
-			}
-			got, err := getHWAddr()
-			if (err != nil) != tt.wantErr {
-				t.Errorf("getHWAddr() error = %v, wantErr %v", err, tt.wantErr)
-				return
-			}
-			if tt.want == nil && !tt.wantErr && (got == nil || got[0]&0x03 != 0x00) {
-				t.Errorf("getHWAddr() = %v, which is not global unicast", got)
-			}
-			if tt.want != nil && !reflect.DeepEqual(got, tt.want) {
-				t.Errorf("getHWAddr() = %v, want %v", got, tt.want)
-			}
-		})
+func TestNamespaceDNS(t *testing.T) {
+	expected := UUID{0x6B, 0xA7, 0xB8, 0x10, 0x9D, 0xAD, 0x11, 0xD1, 0x80, 0xB4, 0x00, 0xC0, 0x4F, 0xD4, 0x30, 0xC8}
+	actual := NamespaceDNS()
+
+	if !reflect.DeepEqual(actual, expected) {
+		t.Errorf("NamespaceDNS() = %v, want %v", actual, expected)
 	}
 }
 
-func Test_getHWAddrRandom(t *testing.T) {
-	trueRand()
-	UseHardwareMAC = false
-	for i := 0; i < 1000; i++ {
-		RandomMAC = nil
-		addr, err := getHWAddr()
-		if err != nil {
-			t.Errorf("getHWAddr() error = %v", err)
-		}
-		if addr == nil {
-			t.Errorf("getHWAddr() returned nil value without error")
-		}
-		if len(addr) != 6 {
-			t.Errorf("getHWAddr() returned invalid length %d", len(addr))
-		}
-		if addr[0]&0x03 != 0x03 {
-			t.Errorf("getHWAddr() = %v, which is not local multicast", addr)
-		}
+func TestNamespaceURL(t *testing.T) {
+	expected := UUID{0x6B, 0xA7, 0xB8, 0x11, 0x9D, 0xAD, 0x11, 0xD1, 0x80, 0xB4, 0x00, 0xC0, 0x4F, 0xD4, 0x30, 0xC8}
+	actual := NamespaceURL()
+
+	if !reflect.DeepEqual(actual, expected) {
+		t.Errorf("NamespaceURL() = %v, want %v", actual, expected)
+	}
+}
+
+func TestNamespaceOID(t *testing.T) {
+	expected := UUID{0x6B, 0xA7, 0xB8, 0x12, 0x9D, 0xAD, 0x11, 0xD1, 0x80, 0xB4, 0x00, 0xC0, 0x4F, 0xD4, 0x30, 0xC8}
+	actual := NamespaceOID()
+
+	if !reflect.DeepEqual(actual, expected) {
+		t.Errorf("NamespaceOID() = %v, want %v", actual, expected)
+	}
+}
+
+func TestNamespaceX500(t *testing.T) {
+	expected := UUID{0x6B, 0xA7, 0xB8, 0x14, 0x9D, 0xAD, 0x11, 0xD1, 0x80, 0xB4, 0x00, 0xC0, 0x4F, 0xD4, 0x30, 0xC8}
+	actual := NamespaceX500()
+
+	if !reflect.DeepEqual(actual, expected) {
+		t.Errorf("NamespaceX500() = %v, want %v", actual, expected)
 	}
 }

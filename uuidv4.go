@@ -1,14 +1,7 @@
 package uuid
 
-import (
-	"crypto/rand"
-)
-
-func NewV4() (uuid UUID, err error) {
-	_, err = rand.Read(uuid[:])
-	if err != nil {
-		return
-	}
+func NewV4() (uuid UUID) {
+	randomSource(uuid[:])
 	uuid.setVersion(4)
 	return
 }
