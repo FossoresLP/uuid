@@ -14,9 +14,12 @@ func Parse(str string) (UUID, error) {
 	if str[8] != '-' || str[13] != '-' || str[18] != '-' || str[23] != '-' {
 		return UUID{}, fmt.Errorf("UUID format invalid")
 	}
-	uuid := UUID{}
 	in := []byte(str)
-	_, err := hex.Decode(uuid[:4], in[:8])
+	return parseByteString(in)
+}
+
+func parseByteString(in []byte) (uuid UUID, err error) {
+	_, err = hex.Decode(uuid[:4], in[:8])
 	if err != nil {
 		return UUID{}, fmt.Errorf("UUID did contain unexpected character in segment %d", 1)
 	}
@@ -39,8 +42,12 @@ func Parse(str string) (UUID, error) {
 	return uuid, nil
 }
 
-// ParseBytes parses a byte slice and returns the contained BINARY UUID or an error
+// ParseBytes parses a byte slice and returns the contained UUID or an error
+// The byte slice can be either in binary format (16 bytes) or in string format (36 bytes)
 func ParseBytes(bytes []byte) (uuid UUID, err error) {
+	if len(bytes) == 36 && bytes[8] == '-' && bytes[13] == '-' && bytes[18] == '-' && bytes[23] == '-' {
+		return parseByteString(bytes)
+	}
 	if len(bytes) != 16 {
 		return uuid, fmt.Errorf("invalid length for binary UUID: %d", len(bytes))
 	}
@@ -83,13 +90,14 @@ func (uuid *UUID) UnmarshalBinary(in []byte) error {
 }
 
 // Scan provides database/sql.Scanner
-func (uuid *UUID) Scan(val interface{}) error {
+func (uuid *UUID) Scan(val any) error {
 	switch v := val.(type) {
 	case []byte:
-		if len(v) != 16 {
-			return fmt.Errorf("invalid length for binary UUID: %d", len(v))
+		id, err := ParseBytes(v)
+		if err != nil {
+			return err
 		}
-		copy(uuid[:], v)
+		*uuid = id
 	case string:
 		id, err := Parse(v)
 		if err != nil {
